@@ -1,0 +1,219 @@
+module mojo_top (
+    input clk,              // 50MHz clock
+    input rst_n,            // reset button (active low)
+    output led [8],         // 8 user controllable LEDs
+    input cclk,             // configuration clock, AVR ready when high
+    output spi_miso,        // AVR SPI MISO
+    input spi_ss,           // AVR SPI Slave Select
+    input spi_mosi,         // AVR SPI MOSI
+    input spi_sck,          // AVR SPI Clock
+    output spi_channel [4], // AVR general purpose pins (used by default to select ADC channel)
+    input avr_tx,           // AVR TX (FPGA RX)
+    output avr_rx,          // AVR RX (FPGA TX)
+    input avr_rx_busy,      // AVR RX buffer full
+    output io_led [3][8],   // LEDs on IO Shield
+    output io_seg [8],      // 7-segment LEDs on IO Shield
+    output io_sel [4],      // Digit select on IO Shield
+    input io_button [5],    // 5 buttons on IO Shield
+    input io_dip [3][8],    // DIP switches on IO Shield
+    output a,         // Output A
+    output b,         // Output B
+    output c,         // Output C
+    input sum,              // Input sum
+    input carry             // Input carry
+    
+  ) {
+  
+  sig rst;                  // reset signal
+  
+  .clk(clk) {
+    // The reset conditioner is used to synchronize the reset signal to the FPGA
+    // clock. This ensures the entire FPGA comes out of reset at the same time.
+    reset_conditioner reset_cond;
+    
+    // Edge detector used to change the input into multi_dec_ctr into a pulse of HIGH
+    edge_detector edge_detector (#RISE(1), #FALL(0));
+    
+    .rst(rst) {
+      multi_seven_seg seg;                 // Initialize multi_seven_seg
+      multi_dec_ctr dec_ctr;               // Initialize multi_dec_ctr
+      counter ctr (#SIZE(1), #DIV(25));    // Initialize counter to count every 2^25(~33.5 million) clock cycle, on MOJO is 50 million clock cycle per second 
+      fsm state = {START, ZERO, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, ERROR}; // Initializate fsm
+    }
+  }
+  
+  always {
+    reset_cond.in = ~rst_n;   // Input raw inverted reset signal
+    rst = reset_cond.out;     // Conditioned reset
+    
+    led = c{3b0, io_button};  // Connect buttons to LEDs
+    spi_miso = bz;            // Not using SPI
+    spi_channel = bzzzz;      // Not using flags
+    avr_rx = bz;              // Not using serial port
+    
+    edge_detector.in = bz; // Have 0 output from edge_detector
+    dec_ctr.inc = 0;       // Stop multi_dec_ctr from counting
+    seg.values = {bzz,bzz,bzz};    // Turn multi_seven_seg off
+    io_seg = 8hz;          // Turn segments off
+    io_sel = 4hz;          // Turn selection off
+    
+    // Have 2 different modes, an automatic testing mode and a manual testing mode
+    // Dip switch is used to select which mode the fpga is in
+    // If dip switch is on, automatic model is selected. Else is manual mode
+    if(io_dip[2][7]){
+      edge_detector.in = ctr.value;      // Input value of counter into edge detector
+      seg.values = dec_ctr.digits;       // Input the output of decimal counter into the multi seven seg values
+      
+      io_seg = ~seg.seg;                 // Connect segments to the driver
+      io_sel = ~seg.sel;                 // Connect digit select to the driver
+    }
+    
+    a = io_dip[0][0];                    // Use dip switch to contorl output A
+    b = io_dip[0][1];                    // Use dip switch to contorl output B
+    c = io_dip[0][2];                    // Use dip switch to contorl output C
+    
+    io_led = io_dip;                     // Connect all led to dip switches
+    io_led[0][0] = sum;                  // Use the first led to show the input of sum
+    io_led[0][1] = carry;                // Use the first led to show the input of carry
+    
+    // Seperate cases into the different output states and expected input from circuit board
+    // If there is an error in the input, transit to state error
+    case (state.q) {
+    
+      // Default state is in start to allow for manual testing
+      // Transit to state 0 if dip is on
+      state.START:
+        if(io_dip[2][7]){
+          state.d = state.ZERO;
+        }
+        
+      // State zero for all output A,B and C to be 0 and input to be 0 for both sum and carry
+      // Transit to state one if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.ZERO:
+        a = 0;
+        b = 0;
+        c = 0;
+        if(edge_detector.out){
+          state.d = state.ONE;
+          if(sum != 0 | carry != 0){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+     
+      // State one for output A = 1, B and C to be 0. Check for Sum == 1, Carry == 0
+      // Transit to state two if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.ONE:
+        a = 1;
+        b = 0;
+        c = 0;
+        if(edge_detector.out){
+          state.d = state.TWO;
+          if(sum != 1 | carry != 0){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State two for output A = 0, B = 1 and C = 0. Check for Sum == 1, Carry == 0
+      // Transit to state three if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.TWO:
+        a = 0;
+        b = 1;
+        c = 0;
+        if(edge_detector.out){
+          state.d = state.THREE;
+          if(sum != 1 | carry != 0){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State three for output A = 1, B = 1 and C = 0. Check for Sum == 0, Carry == 1
+      // Transit to state four if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.THREE:     
+        a = 1;
+        b = 1;
+        c = 0;
+        if(edge_detector.out){
+          state.d = state.FOUR;
+          if(sum != 0 | carry != 1){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State four for output A = 0, B = 0 and C = 1. Check for Sum == 1, Carry == 0
+      // Transit to state five if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.FOUR:
+        a = 0;
+        b = 0;
+        c = 1;
+        if(edge_detector.out){
+          state.d = state.FIVE;
+          if(sum != 1 | carry != 0){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State five for output A = 1, B = 0 and C = 1. Check for Sum == 0, Carry == 1
+      // Transit to state six if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.FIVE:
+        a = 1;
+        b = 0;
+        c = 1;
+        if(edge_detector.out){
+          state.d = state.SIX;
+          if(sum != 0 | carry != 1){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State six for output A = 0, B = 1 and C = 1. Check for Sum == 0, Carry == 1
+      // Transit to state seven if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.SIX:
+        a = 0;
+        b = 1;
+        c = 1;
+        if(edge_detector.out){
+          state.d = state.SEVEN;
+          if(sum != 0 | carry != 1){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State seven for output A = 1, B = 1 and C = 1. Check for Sum == 1, Carry == 1
+      // Transit to state zero if edge_detector is HIGH
+      // Then increase the decimal counter by 1
+      state.SEVEN:
+        a = 1;
+        b = 1;
+        c = 1;
+        if(edge_detector.out){
+          state.d = state.ZERO;
+          if(sum != 1 | carry != 1){
+            state.d = state.ERROR;
+          }
+          dec_ctr.inc = 1;
+        }
+        
+      // State error to output all 0 while showing Err on the led
+      // Cannot exit error state
+      state.ERROR:
+        seg.values = {b10,b11,b11};
+        a = 0;
+        b = 0;
+        c = 0;
+    }
+  }    
+}

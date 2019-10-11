@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="Mojo Full Adder Tester" board="Mojo" language="Lucid" version="2">
+  <files>
+    <component>decoder.luc</component>
+    <src>decimal_counter.luc</src>
+    <src>multi_seven_seg.luc</src>
+    <component>edge_detector.luc</component>
+    <component>counter.luc</component>
+    <src top="true">mojo_top.luc</src>
+    <component>reset_conditioner.luc</component>
+    <src>multi_dec_ctr.luc</src>
+    <src>seven_seg.luc</src>
+    <constraint>custom.ucf</constraint>
+    <constraint lib="true">io_shield.ucf</constraint>
+    <constraint lib="true">mojo.ucf</constraint>
+  </files>
+</project>
