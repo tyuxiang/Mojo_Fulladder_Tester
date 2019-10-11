@@ -1,0 +1,15 @@
+Release 14.7 Drc P.20131013 (nt64)
+Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+
+Fri Oct 11 14:55:39 2019
+
+drc -z mojo_top_0_routed.ncd mojo_top_0.pcf
+
+WARNING:PhysDesignRules:781 - PULLUP on an active net. PULLUP of comp a_PULLUP
+   is set but the tri state is not configured. 
+WARNING:PhysDesignRules:781 - PULLUP on an active net. PULLUP of comp b_PULLUP
+   is set but the tri state is not configured. 
+WARNING:PhysDesignRules:781 - PULLUP on an active net. PULLUP of comp c_PULLUP
+   is set but the tri state is not configured. 
+DRC detected 0 errors and 3 warnings.  Please see the previously displayed
+individual error or warning messages for more details.
